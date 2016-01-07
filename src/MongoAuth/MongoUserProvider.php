@@ -65,6 +65,8 @@ class MongoUserProvider implements UserProviderInterface {
     /**
      * Retrieve a user by the given credentials.
      *
+     * @TODO Get rid of hardcoded password attribute
+     *
      * @param  array  $credentials
      * @return Illuminate\Auth\UserInterface|null
      */
@@ -74,7 +76,7 @@ class MongoUserProvider implements UserProviderInterface {
 
         foreach ($credentials as $key => $value)
         {
-            if ( ! str_contains($key, 'password'))
+            if ( ! str_contains($key, 'Password'))
             {
                 $query->where($key, $value);
             }
@@ -85,6 +87,7 @@ class MongoUserProvider implements UserProviderInterface {
         if ( ! is_null($user))
         {
             $user['id'] = (string) $user['_id'];
+            $user['password'] = $user['Password'];
 
             return new GenericUser((array) $user);
         }
@@ -93,15 +96,47 @@ class MongoUserProvider implements UserProviderInterface {
     /**
      * Validate a user against the given credentials.
      *
+     * @TODO Get rid of hardcoded password attribute
+     * @TODO Credentials check has been changed for backward compatibility. Fix this
+     *
      * @param  Illuminate\Auth\UserInterface  $user
      * @param  array  $credentials
      * @return bool
      */
     public function validateCredentials(UserInterface $user, array $credentials)
     {
-        $plain = $credentials['password'];
+        $plain = $credentials['Password'];
+        $salt  = $user->PasswordSalt;
+        $hash  = crypt(sha1($plain), $salt);
 
-        return $this->hasher->check($plain, $user->getAuthPassword());
+        return ($user->getAuthPassword() == $hash);
     }
 
+    /**
+     * Retrieve a user by by their unique identifier and "remember me" token.
+     *
+     * @param  mixed $identifier
+     * @param  string $token
+     * @return \Illuminate\Auth\UserInterface|null
+     */
+    public function retrieveByToken($identifier, $token)
+    {
+        $user = $this->connection->collection($this->collection)->find($identifier);
+
+        return ($token == $user->getRememberTokenName()) ? $user : null;
+    }
+
+    /**
+     * Update the "remember me" token for the given user in storage.
+     *
+     * @param  \Illuminate\Auth\UserInterface $user
+     * @param  string $token
+     * @return void
+     */
+    public function updateRememberToken(UserInterface $user, $token)
+    {
+        $user->setAttribute($user->getRememberTokenName(), $token);
+
+        $user->save();
+    }
 }
